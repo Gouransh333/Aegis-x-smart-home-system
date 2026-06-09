@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AEGIS-X AI Defense Habitat</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',sans-serif}
+body{
+background:radial-gradient(circle at top,#08142c,#050816,#000);
+color:white;padding:20px
+}
+.header{text-align:center;margin-bottom:20px}
+.logo{
+font-size:48px;font-weight:bold;color:#00d9ff;
+text-shadow:0 0 10px #00d9ff,0 0 20px #00d9ff,0 0 40px #00d9ff;
+animation:pulse 2s infinite
+}
+@keyframes pulse{50%{transform:scale(1.03)}}
+.subtitle{color:#9cdfff;margin-top:5px}
+.clock{font-size:20px;margin-top:10px;color:#00ff88}
+#alertBanner{
+margin-top:15px;padding:12px;border-radius:10px;
+font-weight:bold;font-size:20px;text-align:center;background:#0b5
+}
+.grid{
+display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+gap:15px;margin-top:20px
+}
+.card{
+background:#0f172a;padding:20px;border-radius:20px;text-align:center;
+border:1px solid #1e293b;transition:.3s;cursor:pointer
+}
+.card:hover{
+transform:translateY(-5px);
+box-shadow:0 0 20px rgba(0,217,255,.5)
+}
+.card h2{margin-bottom:10px}
+.status{font-size:24px;font-weight:bold}
+.active{color:#ff4d4d}
+.normal{color:#00ff88}
+.panel{
+background:#0f172a;padding:20px;border-radius:20px;
+margin-top:20px;border:1px solid #1e293b
+}
+.counter{font-size:36px;font-weight:bold;color:#00d9ff}
+.online{color:#00ff88;font-weight:bold}
+.offline{color:red;font-weight:bold}
+#history{max-height:250px;overflow-y:auto}
+.historyItem{padding:10px;border-bottom:1px solid #222}
+#house{display:flex;flex-wrap:wrap;gap:15px;margin-top:15px}
+.room{
+flex:1;min-width:180px;padding:30px;background:#1e293b;
+border-radius:15px;text-align:center;font-size:18px;font-weight:bold
+}
+.activeRoom{background:#ff3333;box-shadow:0 0 20px red}
+.aiCore{text-align:center;font-size:28px;color:#00ff88;font-weight:bold;margin-top:10px}
+.scanLine{height:3px;background:#00ff88;margin-top:10px;animation:scan 2s infinite}
+@keyframes scan{0%{width:0}100%{width:100%}}
+canvas{background:white;border-radius:15px;padding:10px}
+</style>
+</head>
+<body>
+
+<div class="header">
+<div class="logo">🛡️ AEGIS-X AI</div>
+<div class="subtitle">Defense Habitat Monitoring System</div>
+<div class="clock" id="clock"></div>
+<div id="alertBanner">🟢 SYSTEM SECURE</div>
+</div>
+
+<div class="grid">
+<div class="card"><h2>⚠️ Threat Level</h2><div id="threatLevel" class="status normal">LOW</div></div>
+<div class="card"><h2>🧠 AI Health</h2><div id="health" class="status normal">100%</div></div>
+<div class="card"><h2>🔥 Fire Sensor</h2><div id="fire" class="status">--</div></div>
+<div class="card"><h2>🌧 Rain Sensor</h2><div id="rain" class="status">--</div></div>
+<div class="card"><h2>🚨 Emergency Button</h2><div id="touch" class="status">--</div></div>
+<div class="card"><h2>🚶 Motion Sensor</h2><div id="ir" class="status">--</div></div>
+</div>
+
+<div class="grid">
+<div class="card"><h2>🔥 Fire Events</h2><div id="fireCount" class="counter">0</div></div>
+<div class="card"><h2>🚶 Motion Events</h2><div id="motionCount" class="counter">0</div></div>
+<div class="card"><h2>🚨 Emergency Events</h2><div id="panicCount" class="counter">0</div></div>
+<div class="card"><h2>📊 Total Alerts</h2><div id="totalAlerts" class="counter">0</div></div>
+<div class="card"><h2>⏱ Mission Runtime</h2><div id="missionTime" class="counter">0s</div></div>
+</div>
+
+<div class="panel">
+<h2>📈 Live Sensor Activity</h2>
+<canvas id="sensorChart"></canvas>
+</div>
+
+<div class="panel">
+<h2>🏠 Smart House Layout</h2>
+<div id="house">
+<div class="room" id="fireRoom">🔥 Fire Zone</div>
+<div class="room" id="motionRoom">🚶 Entry Zone</div>
+<div class="room" id="touchRoom">🚨 Emergency Zone</div>
+</div>
+</div>
+
+<div class="panel">
+<h2>🤖 AI Core Status</h2>
+<div class="aiCore">AEGIS-X ACTIVE</div>
+<div class="scanLine"></div>
+<br>
+<p id="connection" class="online">ONLINE</p>
+<p id="uptime">Uptime: 0 sec</p>
+</div>
+
+<div class="panel">
+<h2>📜 Alert History</h2>
+<div id="history"></div>
+</div>
+
+<script>
+const NODEMCU_IP = "192.168.29.130"; // CHANGE TO YOUR NODEMCU IP
+
+let fireCount=0,motionCount=0,panicCount=0;
+let prevFire=0,prevMotion=0,prevTouch=0;
+let startTime=Date.now();
+
+const labels=[],fireData=[],motionData=[];
+const chart=new Chart(document.getElementById('sensorChart'),{
+type:'line',
+data:{labels:labels,datasets:[
+{label:'Fire',data:fireData},
+{label:'Motion',data:motionData}
+]},
+options:{responsive:true}
+});
+
+function addHistory(msg){
+let div=document.createElement("div");
+div.className="historyItem";
+div.innerHTML=new Date().toLocaleTimeString()+" - "+msg;
+document.getElementById("history").prepend(div);
+}
+
+function setStatus(id,value){
+const el=document.getElementById(id);
+if(value){el.innerHTML="ACTIVE";el.className="status active";}
+else{el.innerHTML="SAFE";el.className="status normal";}
+}
+
+async function updateData(){
+try{
+const response=await fetch(`http://${NODEMCU_IP}/data`);
+const data=await response.json();
+
+setStatus("fire",data.fire);
+setStatus("rain",data.rain);
+setStatus("touch",data.touch);
+setStatus("ir",data.ir);
+
+document.getElementById("connection").innerHTML="ONLINE";
+document.getElementById("connection").className="online";
+
+if(data.fire && !prevFire){fireCount++;addHistory("🔥 Fire Detected");}
+if(data.ir && !prevMotion){motionCount++;addHistory("🚶 Motion Detected");}
+if(data.touch && !prevTouch){panicCount++;addHistory("🚨 Emergency Activated");}
+
+document.getElementById("fireCount").innerHTML=fireCount;
+document.getElementById("motionCount").innerHTML=motionCount;
+document.getElementById("panicCount").innerHTML=panicCount;
+document.getElementById("totalAlerts").innerHTML=fireCount+motionCount+panicCount;
+
+prevFire=data.fire; prevMotion=data.ir; prevTouch=data.touch;
+
+labels.push("");
+fireData.push(data.fire);
+motionData.push(data.ir);
+
+if(labels.length>25){labels.shift();fireData.shift();motionData.shift();}
+chart.update();
+
+document.getElementById("fireRoom").className=data.fire?"room activeRoom":"room";
+document.getElementById("motionRoom").className=data.ir?"room activeRoom":"room";
+document.getElementById("touchRoom").className=data.touch?"room activeRoom":"room";
+
+const threat=data.fire||data.rain||data.ir||data.touch;
+
+document.getElementById("threatLevel").innerHTML=threat?"HIGH":"LOW";
+document.getElementById("threatLevel").className=threat?"status active":"status normal";
+
+document.querySelector(".aiCore").innerHTML=threat?"DEFENSE MODE":"AEGIS-X ACTIVE";
+
+const banner=document.getElementById("alertBanner");
+banner.innerHTML=threat?"🔴 THREAT DETECTED":"🟢 SYSTEM SECURE";
+banner.style.background=threat?"#d00":"#0b5";
+
+}catch(e){
+document.getElementById("connection").innerHTML="OFFLINE";
+document.getElementById("connection").className="offline";
+}
+
+let uptime=Math.floor((Date.now()-startTime)/1000);
+document.getElementById("uptime").innerHTML="Uptime: "+uptime+" sec";
+document.getElementById("missionTime").innerHTML=uptime+"s";
+}
+
+function updateClock(){
+document.getElementById("clock").innerHTML=new Date().toLocaleTimeString();
+}
+
+setInterval(updateData,1000);
+setInterval(updateClock,1000);
+updateData();
+updateClock();
+</script>
+
+</body>
+</html>
